@@ -1,4 +1,3 @@
-```markdown
 # Voter Check-In PDF to CSV Converter
 
 **Convert official election voter check-in PDFs into clean, usable CSV files in seconds.**
