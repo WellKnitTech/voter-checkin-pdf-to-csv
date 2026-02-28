@@ -17,35 +17,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ====================== UNIVERSAL PARSER (now includes Gillespie County) ======================
+# ====================== UNIVERSAL PARSER ======================
 def parse_voter_line(line: str) -> Dict[str, str] | None:
-    line = line.strip()
+    # Normalize whitespace (fixes pdfplumber quirks)
+    line = re.sub(r'\s+', ' ', line.strip())
     if not line or len(line) < 15:
         return None
 
-    # Expanded skip list for all formats including Gillespie
-    skip_patterns = [
-        "NO.", "NAME", "STATE ID", "POLLING PLACE", "PRECINCT", "VOTER GUID",
-        "VUID", "PCT", "SELECTED ELECTION", "VOTED BY PERSONAL APPEARANCE",
-        "MAILED BALLOTS", "COUNTY NAME", "ELECTION NAME", "REPORT", "EPULSE",
-        "FROM", "TO"
-    ]
-    if any(h in line.upper() for h in skip_patterns):
+    # Skip any line that STARTS with a header (covers ALL formats + repeating page headers)
+    header_start = r'^(No\.|Name|State ID|Polling Place|Precinct|Voter Guid|County Name|Election Name|Report|ePulse|From|To|Voter Check-in|SELECTED ELECTION|VOTED BY PERSONAL APPEARANCE|MAILED BALLOTS|Website Post Report)'
+    if re.match(header_start, line, re.IGNORECASE):
         return None
 
-    # Pattern 1: Check-in reports (Medina, Kerr, Gillespie)
-    # Handles: No, Name, State ID, Polling Place (long or short), Precinct (S or P), optional Voter Guid
+    # Pattern 1: ALL Check-in reports (Medina minimal, Medina/Kerr/Gillespie with polling place)
+    # Polling Place is now OPTIONAL — precinct is always at the END
     m = re.search(
-        r'^\s*(\d{1,4})\s+(.+?)\s+(\d{9,12})\s*(.+?)\s+([SP]\s+[\w\.\-]+)(?:\s+(.+))?$',
+        r'^(\d{1,4})\s+(.+?)\s+(\d{9,12})\s*(.+?)?\s+([SP]\s+[\w\.\-]+)\s*(.+)?$',
         line
     )
     if m:
+        polling = m.group(4).strip() if m.group(4) and m.group(4).strip() else ""
         return {
-            "No": m.group(1).strip(),
-            "Name": m.group(2).strip(),
-            "State ID": m.group(3).strip(),
-            "Polling Place": m.group(4).strip(),
-            "Precinct": m.group(5).strip(),
+            "No": m.group(1),
+            "Name": m.group(2),
+            "State ID": m.group(3),
+            "Polling Place": polling,
+            "Precinct": m.group(5),
             "Voter Guid": m.group(6).strip() if m.group(6) else ""
         }
 
@@ -117,7 +114,7 @@ def convert_single_pdf(pdf_path: Path, output_csv: Path | None = None) -> int:
 def main():
     print("=" * 80)
     print("   UNIVERSAL ELECTION REPORT CONVERTER")
-    print("   (Medina • Kerr • Brazos • Gillespie)")
+    print("   (Medina • Kerr • Brazos • Gillespie • Kerr Website Post)")
     print("=" * 80)
 
     while True:
