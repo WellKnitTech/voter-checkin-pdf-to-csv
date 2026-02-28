@@ -17,28 +17,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ====================== UNIVERSAL PARSER (all 4 formats) ======================
+# ====================== UNIVERSAL PARSER (now includes Gillespie County) ======================
 def parse_voter_line(line: str) -> Dict[str, str] | None:
     line = line.strip()
     if not line or len(line) < 15:
         return None
 
-    # Skip headers
-    if any(h in line.upper() for h in ["NO.", "NAME", "STATE ID", "POLLING PLACE", "PRECINCT", "VUID", "PCT", "SELECTED ELECTION", "VOTED BY PERSONAL APPEARANCE", "MAILED BALLOTS"]):
+    # Expanded skip list for all formats including Gillespie
+    skip_patterns = [
+        "NO.", "NAME", "STATE ID", "POLLING PLACE", "PRECINCT", "VOTER GUID",
+        "VUID", "PCT", "SELECTED ELECTION", "VOTED BY PERSONAL APPEARANCE",
+        "MAILED BALLOTS", "COUNTY NAME", "ELECTION NAME", "REPORT", "EPULSE",
+        "FROM", "TO"
+    ]
+    if any(h in line.upper() for h in skip_patterns):
         return None
 
-    # Pattern 1: Check-in (Medina/Kerr) - No, Name, State ID, [Polling Place], Precinct
-    m = re.search(r'^\s*(\d{1,4})\s+(.+?)\s+(\d{9,12})\s*(.*?)\s+(S\s+[\w\.\-]+)', line)
+    # Pattern 1: Check-in reports (Medina, Kerr, Gillespie)
+    # Handles: No, Name, State ID, Polling Place (long or short), Precinct (S or P), optional Voter Guid
+    m = re.search(
+        r'^\s*(\d{1,4})\s+(.+?)\s+(\d{9,12})\s*(.+?)\s+([SP]\s+[\w\.\-]+)(?:\s+(.+))?$',
+        line
+    )
     if m:
         return {
             "No": m.group(1).strip(),
             "Name": m.group(2).strip(),
             "State ID": m.group(3).strip(),
-            "Polling Place": m.group(4).strip() if m.group(4).strip() else "",
-            "Precinct": m.group(5).strip()
+            "Polling Place": m.group(4).strip(),
+            "Precinct": m.group(5).strip(),
+            "Voter Guid": m.group(6).strip() if m.group(6) else ""
         }
 
-    # Pattern 2: Mailed Ballots - Election, Pct, VUID, Voter Name
+    # Pattern 2: Mailed Ballots (Brazos)
     m = re.search(r'^(2026 REPUBLICAN PRIMARY)\s+(\d{1,3})\s+(\d{9,12})\s+(.+)$', line)
     if m:
         return {
@@ -48,7 +59,7 @@ def parse_voter_line(line: str) -> Dict[str, str] | None:
             "Name": m.group(4).strip()
         }
 
-    # Pattern 3: Personal Appearance - Election, Name, State ID, Precinct
+    # Pattern 3: Personal Appearance (Brazos)
     m = re.search(r'^(2026 REPUBLICAN PRIMARY)\s+(.+?)\s+(\d{9,12})\s+(\d{1,3})$', line)
     if m:
         return {
@@ -96,7 +107,7 @@ def convert_single_pdf(pdf_path: Path, output_csv: Path | None = None) -> int:
         return 0
 
     df = pd.DataFrame(records)
-    df = df.drop_duplicates(subset=["State ID"], keep="first")   # safe for all formats
+    df = df.drop_duplicates(subset=["State ID"], keep="first")
 
     df.to_csv(output_csv, index=False, encoding="utf-8")
     print(f"✅ Saved {len(df)} records → {output_csv.name}\n")
@@ -106,7 +117,7 @@ def convert_single_pdf(pdf_path: Path, output_csv: Path | None = None) -> int:
 def main():
     print("=" * 80)
     print("   UNIVERSAL ELECTION REPORT CONVERTER")
-    print("   (Medina, Kerr, Mailed Ballots, Personal Appearance)")
+    print("   (Medina • Kerr • Brazos • Gillespie)")
     print("=" * 80)
 
     while True:
